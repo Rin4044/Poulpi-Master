@@ -17,32 +17,64 @@ async function getAppToken() {
 async function subscribeToStream() {
     await getAppToken()
 
-    const userRes = await axios.get(`https://api.twitch.tv/helix/users?login=${process.env.TWITCH_CHANNEL}`, {
-        headers: {
-            'Client-ID': process.env.TWITCH_CLIENT_ID,
-            'Authorization': `Bearer ${appAccessToken}`
+    const userRes = await axios.get(
+        `https://api.twitch.tv/helix/users?login=${process.env.TWITCH_CHANNEL}`,
+        {
+            headers: {
+                'Client-ID': process.env.TWITCH_CLIENT_ID,
+                'Authorization': `Bearer ${appAccessToken}`
+            }
         }
-    })
+    )
 
     const userId = userRes.data.data[0].id
 
-    await axios.post('https://api.twitch.tv/helix/eventsub/subscriptions', {
-        type: 'stream.online',
-        version: '1',
-        condition: { broadcaster_user_id: userId },
-        transport: {
-            method: 'webhook',
-            callback: `https://${process.env.PUBLIC_URL}/webhook`,
-            secret: 'supersecret'
+    const existingSubs = await axios.get(
+        'https://api.twitch.tv/helix/eventsub/subscriptions',
+        {
+            headers: {
+                'Client-ID': process.env.TWITCH_CLIENT_ID,
+                'Authorization': `Bearer ${appAccessToken}`
+            }
         }
-    }, {
-        headers: {
-            'Client-ID': process.env.TWITCH_CLIENT_ID,
-            'Authorization': `Bearer ${appAccessToken}`,
-            'Content-Type': 'application/json'
+    )
+
+    for (const sub of existingSubs.data.data) {
+        if (sub.type === 'stream.online') {
+            await axios.delete(
+                `https://api.twitch.tv/helix/eventsub/subscriptions?id=${sub.id}`,
+                {
+                    headers: {
+                        'Client-ID': process.env.TWITCH_CLIENT_ID,
+                        'Authorization': `Bearer ${appAccessToken}`
+                    }
+                }
+            )
         }
-    })
+    }
+
+    await axios.post(
+        'https://api.twitch.tv/helix/eventsub/subscriptions',
+        {
+            type: 'stream.online',
+            version: '1',
+            condition: { broadcaster_user_id: userId },
+            transport: {
+                method: 'webhook',
+                callback: `https://${process.env.PUBLIC_URL}/webhook`,
+                secret: 'supersecret'
+            }
+        },
+        {
+            headers: {
+                'Client-ID': process.env.TWITCH_CLIENT_ID,
+                'Authorization': `Bearer ${appAccessToken}`,
+                'Content-Type': 'application/json'
+            }
+        }
+    )
 }
+
 
 function verifySignature(req) {
     const message = req.headers['twitch-eventsub-message-id'] +
