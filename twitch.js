@@ -32,7 +32,7 @@ async function subscribeToStream() {
         condition: { broadcaster_user_id: userId },
         transport: {
             method: 'webhook',
-            callback: `$https://${process.env.PUBLIC_URL}/webhook`,
+            callback: `https://${process.env.PUBLIC_URL}/webhook`,
             secret: 'supersecret'
         }
     }, {
