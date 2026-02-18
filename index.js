@@ -1,9 +1,10 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Collection, REST, Routes, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
-const express = require('express')
-const { setupTwitch } = require('./twitch')
-const { setupScheduler } = require('./scheduler')
+const express = require('express');
+const { setupTwitch } = require('./twitch');
+const { setupScheduler } = require('./scheduler');
+const { setNoLiveState } = require('./twitchPanel');
 
 const client = new Client({
     intents: [
@@ -22,38 +23,16 @@ for (const file of commandFiles) {
     client.commands.set(command.data.name, command);
 }
 
-const app = express()
-app.use(express.json())
-
-let noLiveToday = false
-
-client.once('ready', async () => {
-    console.log(`Connecté en tant que ${client.user.tag}`)
-
-    await setupTwitch(app)
-    setupScheduler(client, () => noLiveToday)
-
-    const channel = await client.channels.fetch(process.env.CONTROL_CHANNEL_ID)
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('no_live')
-            .setLabel('No Live Today')
-            .setStyle(ButtonStyle.Danger)
-    )
-
-    await channel.send({
-        content: 'Live Control Panel',
-        components: [row]
-    })
-})
+const app = express();
+app.use(express.json());
 
 client.once('ready', async () => {
     console.log(`Connecté en tant que ${client.user.tag}`);
 
-    const commands = [];
+    await setupTwitch(app);
+    setupScheduler(client);
 
-    const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+    const commands = [];
 
     for (const file of commandFiles) {
         const command = require(`./commands/${file}`);
@@ -62,20 +41,66 @@ client.once('ready', async () => {
 
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
-    try {
-        console.log("Mise à jour automatique des slash commands...");
+    await rest.put(
+        Routes.applicationCommands(client.user.id),
+        { body: commands }
+    );
 
-        await rest.put(
-            Routes.applicationCommands(client.user.id),
-            { body: commands }
-        );
+    console.log("Slash commands mises à jour.");
 
-        console.log("Slash commands mises à jour.");
-    } catch (error) {
-        console.error(error);
-    }
+    const channel = await client.channels.fetch(process.env.CONTROL_CHANNEL_ID);
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('no_live')
+            .setLabel('No Live Today')
+            .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+            .setCustomId('reset_live')
+            .setLabel('Reset')
+            .setStyle(ButtonStyle.Success)
+    );
+
+    await channel.send({
+        content: '🎥 Live Control Panel',
+        components: [row]
+    });
 });
 
+client.on('interactionCreate', async interaction => {
+
+    if (interaction.isChatInputCommand()) {
+        const command = client.commands.get(interaction.commandName);
+        if (!command) return;
+
+        try {
+            await command.execute(interaction);
+        } catch (error) {
+            console.error(error);
+            await interaction.reply({ content: "Erreur.", ephemeral: true });
+        }
+        return;
+    }
+
+    if (interaction.isButton()) {
+
+        if (interaction.customId === "no_live") {
+            setNoLiveState(true);
+            await interaction.reply({
+                content: "Pas de live aujourd'hui annoncé.",
+                ephemeral: true
+            });
+        }
+
+        if (interaction.customId === "reset_live") {
+            setNoLiveState(false);
+            await interaction.reply({
+                content: "Annonce live réactivée.",
+                ephemeral: true
+            });
+        }
+    }
+});
 
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
@@ -87,49 +112,12 @@ client.on('messageCreate', async message => {
     const EMOJI_ID = '1470471235367338157';
 
     if (!message.channel.isThread()) return;
-
     if (!FORUM_ID.includes(message.channel.parentId)) return;
-
     if (message.attachments.size === 0) return;
 
-    try {
-        await message.react(EMOJI_ID);
-    } catch (error) {
-        console.error(error);
-    }
+    await message.react(EMOJI_ID);
 });
 
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-
-    const command = client.commands.get(interaction.commandName);
-
-    if (!command) return;
-
-    try {
-        await command.execute(interaction);
-    } catch (error) {
-        console.error("Erreur dans la commande :", error);
-
-        if (interaction.replied || interaction.deferred) {
-            await interaction.editReply({ content: "Erreur." });
-        } else {
-            await interaction.reply({ content: "Erreur.", ephemeral: true });
-        }
-    }
-    if (!interaction.isButton()) return
-
-    if (interaction.customId === 'no_live') {
-        noLiveToday = true
-
-        const channel = await client.channels.fetch(process.env.ANNOUNCE_CHANNEL_ID)
-
-        await channel.send(`No live today, sorry poulpi 💔`)
-
-        await interaction.reply({ content: 'Live annulé pour aujourd’hui.', ephemeral: true })
-    }
-});
-
-app.listen(3000)
+app.listen(3000);
 
 client.login(process.env.TOKEN);
