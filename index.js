@@ -1,6 +1,9 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Collection, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, REST, Routes, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
+const express = require('express')
+const { setupTwitch } = require('./twitch')
+const { setupScheduler } = require('./scheduler')
 
 const client = new Client({
     intents: [
@@ -18,6 +21,32 @@ for (const file of commandFiles) {
     const command = require(`./commands/${file}`);
     client.commands.set(command.data.name, command);
 }
+
+const app = express()
+app.use(express.json())
+
+let noLiveToday = false
+
+client.once('ready', async () => {
+    console.log(`Connecté en tant que ${client.user.tag}`)
+
+    await setupTwitch(app)
+    setupScheduler(client, () => noLiveToday)
+
+    const channel = await client.channels.fetch(process.env.CONTROL_CHANNEL_ID)
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('no_live')
+            .setLabel('No Live Today')
+            .setStyle(ButtonStyle.Danger)
+    )
+
+    await channel.send({
+        content: 'Live Control Panel',
+        components: [row]
+    })
+})
 
 client.once('ready', async () => {
     console.log(`Connecté en tant que ${client.user.tag}`);
@@ -88,7 +117,19 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: "Erreur.", ephemeral: true });
         }
     }
+    if (!interaction.isButton()) return
+
+    if (interaction.customId === 'no_live') {
+        noLiveToday = true
+
+        const channel = await client.channels.fetch(process.env.ANNOUNCE_CHANNEL_ID)
+
+        await channel.send(`No live today, sorry poulpi 💔`)
+
+        await interaction.reply({ content: 'Live annulé pour aujourd’hui.', ephemeral: true })
+    }
 });
 
+app.listen(3000)
 
 client.login(process.env.TOKEN);
