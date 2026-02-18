@@ -13,7 +13,7 @@ function setupScheduler(client) {
         );
     });
 
-    cron.schedule('0 0 * * *', () => {
+    cron.schedule('0 17 * * 3', () => {
         setNoLiveState(false);
     });
 }
