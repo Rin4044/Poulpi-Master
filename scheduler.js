@@ -9,7 +9,7 @@ function setupScheduler(client) {
         const channel = await client.channels.fetch(process.env.ANNOUNCE_CHANNEL_ID);
 
         await channel.send(
-            `@Live Twitch\n\n🇬🇧 I will be live today at 9pm CET!\n🇫🇷 Je serai en live aujourd’hui à 21h !`
+            `<@&1041740086041133116>\n\n🇬🇧 I will be live today at 9pm CET!\n🇫🇷 Je serai en live aujourd’hui à 21h !`
         );
     }, {
         timezone: 'Europe/Paris'
